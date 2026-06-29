@@ -13,6 +13,7 @@ import (
 const (
 	managementStatusPath = "plugins/remote-code-router/status"
 	managementSelectPath = "plugins/remote-code-router/select"
+	resourceStatusPath   = "status.json"
 	resourceIndexPath    = "index.html"
 )
 
@@ -58,6 +59,11 @@ func (p *remoteCodeRouterPlugin) RegisterManagement(context.Context, pluginapi.M
 		},
 		Resources: []pluginapi.ResourceRoute{
 			{
+				Path:        resourceStatusPath,
+				Description: "Read remote-code-router status without a management key.",
+				Handler:     p,
+			},
+			{
 				Path:        resourceIndexPath,
 				Menu:        "Remote Code Router",
 				Description: "Switch the server-side model used by remote-code-router aliases.",
@@ -75,6 +81,8 @@ func (p *remoteCodeRouterPlugin) HandleManagement(_ context.Context, req plugina
 		return jsonManagementResponse(http.StatusOK, p.managementStatus()), nil
 	case method == http.MethodPost && (path == managementSelectPath || strings.HasSuffix(path, "/"+managementSelectPath)):
 		return p.handleSelectCandidate(req.Body)
+	case method == http.MethodGet && (path == resourceStatusPath || strings.HasSuffix(path, "/"+resourceStatusPath)):
+		return jsonManagementResponse(http.StatusOK, p.managementStatus()), nil
 	case method == http.MethodGet && (path == resourceIndexPath || path == "" || strings.HasSuffix(path, "/"+resourceIndexPath)):
 		return htmlManagementResponse(remoteCodeRouterHTML()), nil
 	default:
@@ -182,6 +190,7 @@ func remoteCodeRouterHTML() string {
     h1 { margin: 0; font-size: 26px; font-weight: 720; letter-spacing: 0; }
     .subtle { color: #657085; font-size: 13px; }
     .toolbar { display: flex; align-items: center; gap: 10px; }
+    input { border: 1px solid #cad2df; background: #fff; color: #172033; border-radius: 7px; padding: 9px 10px; min-width: 190px; }
     button { border: 1px solid #cad2df; background: #fff; color: #172033; border-radius: 7px; padding: 9px 12px; cursor: pointer; font-weight: 650; }
     button:hover { border-color: #6b7a99; }
     .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; }
@@ -197,7 +206,7 @@ func remoteCodeRouterHTML() string {
     .notice { margin-bottom: 16px; padding: 10px 12px; border-radius: 8px; background: #edf7f0; color: #195233; border: 1px solid #bfe3cb; display: none; }
     @media (prefers-color-scheme: dark) {
       body { background: #10141c; color: #f0f3f8; }
-      .card, button { background: #171d28; color: #f0f3f8; border-color: #30394a; }
+      .card, button, input { background: #171d28; color: #f0f3f8; border-color: #30394a; }
       .subtle, .model, .pill { color: #aeb8c9; }
       .pill { background: #111722; border-color: #30394a; }
       .notice { background: #13261c; color: #bde5ca; border-color: #285c3c; }
@@ -211,13 +220,17 @@ func remoteCodeRouterHTML() string {
         <h1>Remote Code Router</h1>
         <div class="subtle" id="summary">Loading</div>
       </div>
-      <div class="toolbar"><button id="refresh" type="button">Refresh</button></div>
+      <div class="toolbar">
+        <input id="managementKey" type="password" placeholder="Management key">
+        <button id="refresh" type="button">Refresh</button>
+      </div>
     </header>
     <div class="notice" id="notice"></div>
     <section class="grid" id="grid"></section>
   </main>
   <script>
     const statusURLs = [
+      "/v0/resource/plugins/remote-code-router/status.json",
       "/v0/management/plugins/remote-code-router/status",
       "/v0/management/remote-code-router/status"
     ];
@@ -228,15 +241,31 @@ func remoteCodeRouterHTML() string {
     const grid = document.getElementById("grid");
     const summary = document.getElementById("summary");
     const notice = document.getElementById("notice");
+    const managementKey = document.getElementById("managementKey");
+    managementKey.value = localStorage.getItem("remoteCodeRouterManagementKey") || "";
+    managementKey.addEventListener("change", () => {
+      localStorage.setItem("remoteCodeRouterManagementKey", managementKey.value);
+    });
     document.getElementById("refresh").addEventListener("click", load);
     async function load() {
       const data = await fetchJSON(statusURLs);
       render(data);
     }
     async function selectCandidate(name) {
+      const key = managementKey.value.trim();
+      if (!key) {
+        alert("Enter the management key before switching candidates.");
+        managementKey.focus();
+        return;
+      }
+      localStorage.setItem("remoteCodeRouterManagementKey", key);
       const data = await fetchJSON(selectURLs, {
         method: "POST",
-        headers: { "Content-Type": "application/json", "Accept": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "Accept": "application/json",
+          "X-Management-Key": key
+        },
         body: JSON.stringify({ active_candidate: name })
       });
       notice.textContent = "Active candidate: " + data.active_candidate;

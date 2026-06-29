@@ -165,6 +165,27 @@ func TestManagementSelectUpdatesState(t *testing.T) {
 	}
 }
 
+func TestResourceStatusReturnsAliases(t *testing.T) {
+	p := newTestPlugin(t)
+	resp, err := p.HandleManagement(context.Background(), pluginapi.ManagementRequest{
+		Method: http.MethodGet,
+		Path:   "/v0/resource/plugins/remote-code-router/status.json",
+	})
+	if err != nil {
+		t.Fatalf("HandleManagement() error = %v", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, body=%s", resp.StatusCode, string(resp.Body))
+	}
+	var status managementStatus
+	if err := json.Unmarshal(resp.Body, &status); err != nil {
+		t.Fatalf("decode status: %v", err)
+	}
+	if len(status.Models) != 1 || len(status.Candidates) == 0 {
+		t.Fatalf("unexpected status: %+v", status)
+	}
+}
+
 func TestRegisterModelsReturnsAliases(t *testing.T) {
 	p := newTestPlugin(t)
 	resp, err := p.RegisterModels(context.Background(), pluginapi.ModelRegistrationRequest{})
