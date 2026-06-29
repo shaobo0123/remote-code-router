@@ -233,6 +233,7 @@ func remoteCodeRouterHTML() string {
     <section class="list" id="list"></section>
   </main>
   <script>
+    const statusURL = "/v0/resource/plugins/remote-code-router/status.json";
     const selectURL = "/v0/resource/plugins/remote-code-router/select.json";
     const importURL = "/v0/resource/plugins/remote-code-router/import.json";
     const list = document.getElementById("list");
@@ -240,7 +241,14 @@ func remoteCodeRouterHTML() string {
     const notice = document.getElementById("notice");
     document.getElementById("refresh").addEventListener("click", load);
     async function load() {
-      render(await importCPAModels());
+      const status = await fetchJSON(statusURL);
+      render(status);
+      try {
+        render(await importCPAModels());
+      } catch (err) {
+        notice.textContent = err.message;
+        notice.style.display = "block";
+      }
     }
     async function importCPAModels() {
       const modelPayload = await fetchJSON("/v1/models");

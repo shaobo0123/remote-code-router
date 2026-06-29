@@ -25,7 +25,7 @@ model_aliases:
 candidates: []
 ```
 
-Open `Remote Code Router` in CPA. The page reads `/v1/models` once, saves the imported candidates once, then shows a compact list for switching.
+Open `Remote Code Router` in CPA. The page shows saved candidates first. If none exist, it reads `/v1/models`, saves the imported candidates once, then shows a compact list for switching.
 
 ## Management Resources
 
