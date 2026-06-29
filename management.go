@@ -11,8 +11,8 @@ import (
 )
 
 const (
-	managementStatusPath = "remote-code-router/status"
-	managementSelectPath = "remote-code-router/select"
+	managementStatusPath = "plugins/remote-code-router/status"
+	managementSelectPath = "plugins/remote-code-router/select"
 	resourceIndexPath    = "index.html"
 )
 
@@ -217,32 +217,53 @@ func remoteCodeRouterHTML() string {
     <section class="grid" id="grid"></section>
   </main>
   <script>
-    const statusURL = "/v0/management/remote-code-router/status";
-    const selectURL = "/v0/management/remote-code-router/select";
+    const statusURLs = [
+      "/v0/management/plugins/remote-code-router/status",
+      "/v0/management/remote-code-router/status"
+    ];
+    const selectURLs = [
+      "/v0/management/plugins/remote-code-router/select",
+      "/v0/management/remote-code-router/select"
+    ];
     const grid = document.getElementById("grid");
     const summary = document.getElementById("summary");
     const notice = document.getElementById("notice");
     document.getElementById("refresh").addEventListener("click", load);
     async function load() {
-      const res = await fetch(statusURL, { headers: { "Accept": "application/json" } });
-      const data = await res.json();
+      const data = await fetchJSON(statusURLs);
       render(data);
     }
     async function selectCandidate(name) {
-      const res = await fetch(selectURL, {
+      const data = await fetchJSON(selectURLs, {
         method: "POST",
         headers: { "Content-Type": "application/json", "Accept": "application/json" },
         body: JSON.stringify({ active_candidate: name })
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "selection failed");
       notice.textContent = "Active candidate: " + data.active_candidate;
       notice.style.display = "block";
       render(data);
     }
+    async function fetchJSON(urls, options) {
+      let lastError = "";
+      for (const url of urls) {
+        const res = await fetch(url, options || { headers: { "Accept": "application/json" } });
+        let data = null;
+        try {
+          data = await res.json();
+        } catch (err) {
+          lastError = url + ": invalid JSON response";
+          continue;
+        }
+        if (res.ok && Array.isArray(data.models) && Array.isArray(data.candidates)) return data;
+        lastError = url + ": " + (data.error || data.message || ("HTTP " + res.status));
+      }
+      throw new Error(lastError || "Remote Code Router status API is unavailable");
+    }
     function render(data) {
-      summary.textContent = data.models.map(m => m.id).join(", ") + " -> " + data.active_candidate;
-      grid.replaceChildren(...data.candidates.map(candidateCard));
+      const models = Array.isArray(data.models) ? data.models : [];
+      const candidates = Array.isArray(data.candidates) ? data.candidates : [];
+      summary.textContent = models.map(m => m.id).join(", ") + " -> " + data.active_candidate;
+      grid.replaceChildren(...candidates.map(candidateCard));
     }
     function candidateCard(item) {
       const card = document.createElement("article");
