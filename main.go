@@ -7,7 +7,7 @@ const (
 	pluginProvider = "remote-code-router"
 )
 
-var pluginVersion = "0.1.2"
+var pluginVersion = "0.1.3"
 
 var executorFormats = []string{
 	"claude",

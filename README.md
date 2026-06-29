@@ -10,6 +10,7 @@ Clients can keep requesting `code` or `ark-code-latest`; the server can switch t
 - Routes matching model aliases to the plugin executor with `ModelRouter`.
 - Executes real upstream models through CPA `host.model.*` callbacks, so credentials stay owned by CPA providers.
 - Supports `active_candidate: auto` priority routing and manual server-side selection.
+- Can import existing CPA `/v1/models` entries from the management page as router candidates.
 - Persists management-page selection to `remote-code-router.state.yaml` under the plugin directory.
 - Supports non-stream fallback and stream fallback before the first emitted chunk.
 - Provides a Management API page for switching the active candidate.
@@ -18,7 +19,23 @@ Clients can keep requesting `code` or `ark-code-latest`; the server can switch t
 
 Install the compiled dynamic library as the CPA plugin ID/config key `remote-code-router`, then configure it with YAML like `config.example.yaml`.
 
-Minimal shape:
+Minimal shape when you want to import real candidates from CPA in the page:
+
+```yaml
+client_models: [code]
+active_candidate: auto
+model_aliases:
+  - id: code
+    display_name: Remote Code Router
+    context_length: 128000
+    thinking: true
+fallback:
+  enabled: true
+```
+
+After the plugin is running, open `Remote Code Router`, enter the CPA management key, and click `Import CPA Models`. The page reads `/v1/models`, filters out this plugin's virtual aliases, and saves the imported candidates to `remote-code-router.state.yaml`.
+
+Manual candidate shape:
 
 ```yaml
 client_models: [code]
@@ -47,8 +64,10 @@ Set `active_candidate` to `auto` to use priority order, or to a candidate name s
 
 The plugin registers:
 
-- `GET /v0/management/remote-code-router/status`
-- `POST /v0/management/remote-code-router/select`
+- `GET /v0/management/plugins/remote-code-router/status`
+- `POST /v0/management/plugins/remote-code-router/select`
+- `POST /v0/management/plugins/remote-code-router/import`
+- `GET /v0/resource/plugins/remote-code-router/status.json`
 - `GET /v0/resource/plugins/remote-code-router/index.html`
 
 POST body:

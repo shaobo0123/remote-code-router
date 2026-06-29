@@ -165,6 +165,47 @@ func TestManagementSelectUpdatesState(t *testing.T) {
 	}
 }
 
+func TestManagementImportCandidatesUpdatesRouting(t *testing.T) {
+	plugin, err := buildPlugin([]byte(`
+client_models: [code]
+active_candidate: auto
+model_aliases:
+  - id: code
+fallback:
+  enabled: true
+`), t.TempDir())
+	if err != nil {
+		t.Fatalf("buildPlugin() error = %v", err)
+	}
+	p := plugin.Capabilities.ModelRouter.(*remoteCodeRouterPlugin)
+	resp, err := p.HandleManagement(context.Background(), pluginapi.ManagementRequest{
+		Method: http.MethodPost,
+		Path:   managementImportPath,
+		Body: []byte(`{
+		  "candidates": [
+		    {"name":"cpa-gpt-5","provider":"cpa","model":"gpt-5","priority":100},
+		    {"name":"cpa-claude","provider":"cpa","model":"claude-sonnet-4","priority":90}
+		  ]
+		}`),
+	})
+	if err != nil {
+		t.Fatalf("HandleManagement() error = %v", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, body=%s", resp.StatusCode, string(resp.Body))
+	}
+	plan, ok := p.buildRoutePlan(pluginapi.ModelRouteRequest{
+		RequestedModel:     "code",
+		AvailableProviders: []string{"ark"},
+	}, true)
+	if !ok {
+		t.Fatalf("expected route plan")
+	}
+	if got := plan.Candidates[0].Model; got != "gpt-5" {
+		t.Fatalf("first candidate model = %q, want gpt-5", got)
+	}
+}
+
 func TestResourceStatusReturnsAliases(t *testing.T) {
 	p := newTestPlugin(t)
 	resp, err := p.HandleManagement(context.Background(), pluginapi.ManagementRequest{

@@ -40,6 +40,8 @@ model_aliases:
       - stream
 
 candidates:
+  # Optional. You can leave this list empty and import current CPA /v1/models
+  # from the Remote Code Router management page instead.
   - name: doubao-code
     provider: ark
     model: doubao-seed-2.0-code

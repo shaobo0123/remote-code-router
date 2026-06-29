@@ -170,10 +170,7 @@ func validateConfig(cfg PluginConfig, allowMissingCandidates bool) error {
 		seenAliases[key] = struct{}{}
 	}
 	if len(cfg.Candidates) == 0 {
-		if allowMissingCandidates {
-			return validateFallbackConfig(cfg.Fallback)
-		}
-		return fmt.Errorf("%s config requires at least one candidates entry", pluginName)
+		return validateFallbackConfig(cfg.Fallback)
 	}
 	seenCandidates := make(map[string]struct{}, len(cfg.Candidates))
 	for i, candidate := range cfg.Candidates {

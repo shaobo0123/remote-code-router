@@ -13,6 +13,7 @@ import (
 const (
 	managementStatusPath = "plugins/remote-code-router/status"
 	managementSelectPath = "plugins/remote-code-router/select"
+	managementImportPath = "plugins/remote-code-router/import"
 	resourceStatusPath   = "status.json"
 	resourceIndexPath    = "index.html"
 )
@@ -41,6 +42,10 @@ type selectCandidateRequest struct {
 	Candidate       string `json:"candidate"`
 }
 
+type importCandidatesRequest struct {
+	Candidates []Candidate `json:"candidates"`
+}
+
 func (p *remoteCodeRouterPlugin) RegisterManagement(context.Context, pluginapi.ManagementRegistrationRequest) (pluginapi.ManagementRegistrationResponse, error) {
 	return pluginapi.ManagementRegistrationResponse{
 		Routes: []pluginapi.ManagementRoute{
@@ -54,6 +59,12 @@ func (p *remoteCodeRouterPlugin) RegisterManagement(context.Context, pluginapi.M
 				Method:      http.MethodPost,
 				Path:        managementSelectPath,
 				Description: "Set the active server-side model candidate.",
+				Handler:     p,
+			},
+			{
+				Method:      http.MethodPost,
+				Path:        managementImportPath,
+				Description: "Import CPA model list as server-side candidates.",
 				Handler:     p,
 			},
 		},
@@ -81,6 +92,8 @@ func (p *remoteCodeRouterPlugin) HandleManagement(_ context.Context, req plugina
 		return jsonManagementResponse(http.StatusOK, p.managementStatus()), nil
 	case method == http.MethodPost && (path == managementSelectPath || strings.HasSuffix(path, "/"+managementSelectPath)):
 		return p.handleSelectCandidate(req.Body)
+	case method == http.MethodPost && (path == managementImportPath || strings.HasSuffix(path, "/"+managementImportPath)):
+		return p.handleImportCandidates(req.Body)
 	case method == http.MethodGet && (path == resourceStatusPath || strings.HasSuffix(path, "/"+resourceStatusPath)):
 		return jsonManagementResponse(http.StatusOK, p.managementStatus()), nil
 	case method == http.MethodGet && (path == resourceIndexPath || path == "" || strings.HasSuffix(path, "/"+resourceIndexPath)):
@@ -107,12 +120,30 @@ func (p *remoteCodeRouterPlugin) handleSelectCandidate(body []byte) (pluginapi.M
 	return jsonManagementResponse(http.StatusOK, p.managementStatus()), nil
 }
 
+func (p *remoteCodeRouterPlugin) handleImportCandidates(body []byte) (pluginapi.ManagementResponse, error) {
+	var req importCandidatesRequest
+	if len(body) == 0 {
+		return jsonManagementResponse(http.StatusBadRequest, map[string]any{"error": "request body is required"}), nil
+	}
+	if err := json.Unmarshal(body, &req); err != nil {
+		return jsonManagementResponse(http.StatusBadRequest, map[string]any{"error": "invalid json body"}), nil
+	}
+	candidates := normalizeStateCandidates(req.Candidates)
+	if len(candidates) == 0 {
+		return jsonManagementResponse(http.StatusBadRequest, map[string]any{"error": "no valid candidates to import"}), nil
+	}
+	if err := p.state.setImportedCandidates(candidates); err != nil {
+		return pluginapi.ManagementResponse{}, err
+	}
+	return jsonManagementResponse(http.StatusOK, p.managementStatus()), nil
+}
+
 func (p *remoteCodeRouterPlugin) validateCandidateSelection(candidate string) error {
 	candidate = normalizeActiveCandidate(candidate)
 	if candidate == activeCandidateAuto {
 		return nil
 	}
-	for _, item := range p.cfg.Candidates {
+	for _, item := range p.effectiveCandidates() {
 		if item.Disabled {
 			continue
 		}
@@ -133,7 +164,7 @@ func (p *remoteCodeRouterPlugin) managementStatus() managementStatus {
 		Description: "Use candidate priority and fallback rules.",
 		Active:      active == activeCandidateAuto,
 	})
-	for _, candidate := range p.cfg.Candidates {
+	for _, candidate := range p.effectiveCandidates() {
 		targets = append(targets, managementTarget{
 			Name:        candidate.Name,
 			Provider:    candidate.Provider,
@@ -222,6 +253,7 @@ func remoteCodeRouterHTML() string {
       </div>
       <div class="toolbar">
         <input id="managementKey" type="password" placeholder="Management key">
+        <button id="importModels" type="button">Import CPA Models</button>
         <button id="refresh" type="button">Refresh</button>
       </div>
     </header>
@@ -238,6 +270,10 @@ func remoteCodeRouterHTML() string {
       "/v0/management/plugins/remote-code-router/select",
       "/v0/management/remote-code-router/select"
     ];
+    const importURLs = [
+      "/v0/management/plugins/remote-code-router/import",
+      "/v0/management/remote-code-router/import"
+    ];
     const grid = document.getElementById("grid");
     const summary = document.getElementById("summary");
     const notice = document.getElementById("notice");
@@ -247,9 +283,83 @@ func remoteCodeRouterHTML() string {
       localStorage.setItem("remoteCodeRouterManagementKey", managementKey.value);
     });
     document.getElementById("refresh").addEventListener("click", load);
+    document.getElementById("importModels").addEventListener("click", () => importCPAModels().catch(err => alert(err.message)));
     async function load() {
       const data = await fetchJSON(statusURLs);
       render(data);
+    }
+    async function importCPAModels() {
+      const key = managementKey.value.trim();
+      if (!key) {
+        alert("Enter the management key before importing candidates.");
+        managementKey.focus();
+        return;
+      }
+      const status = await fetchJSON(statusURLs);
+      const aliases = new Set((status.models || []).map(m => String(m.id || m.name || "").toLowerCase()).filter(Boolean));
+      const modelPayload = await fetchCPAModels(key);
+      const rawModels = Array.isArray(modelPayload.data) ? modelPayload.data : (Array.isArray(modelPayload.models) ? modelPayload.models : []);
+      const candidates = [];
+      const seen = new Set();
+      for (const item of rawModels) {
+        const id = String(item.id || item.name || item.model || "").trim();
+        if (!id) continue;
+        const lower = id.toLowerCase();
+        const ownedBy = String(item.owned_by || item.ownedBy || item.provider || item.type || "cpa").trim();
+        if (aliases.has(lower) || lower === "remote-code-router" || ownedBy.toLowerCase() === "remote-code-router") continue;
+        if (seen.has(lower)) continue;
+        seen.add(lower);
+        candidates.push({
+          name: candidateName(id, ownedBy),
+          provider: ownedBy || "cpa",
+          model: id,
+          priority: Math.max(1, 1000 - candidates.length),
+          description: item.description || item.display_name || item.displayName || ""
+        });
+      }
+      if (!candidates.length) throw new Error("No CPA models were found to import.");
+      localStorage.setItem("remoteCodeRouterManagementKey", key);
+      const data = await fetchJSON(importURLs, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Accept": "application/json",
+          "X-Management-Key": key
+        },
+        body: JSON.stringify({ candidates })
+      });
+      notice.textContent = "Imported candidates: " + candidates.length;
+      notice.style.display = "block";
+      render(data);
+    }
+    async function fetchCPAModels(key) {
+      const attempts = [
+        { headers: { "Accept": "application/json" } },
+        { headers: { "Accept": "application/json", "Authorization": "Bearer " + key } },
+        { headers: { "Accept": "application/json", "X-Management-Key": key } }
+      ];
+      let lastError = "";
+      for (const options of attempts) {
+        const res = await fetch("/v1/models", options);
+        let data = null;
+        try {
+          data = await res.json();
+        } catch (err) {
+          lastError = "/v1/models: invalid JSON response";
+          continue;
+        }
+        if (res.ok) return data;
+        lastError = "/v1/models: " + (data.error?.message || data.error || data.message || ("HTTP " + res.status));
+      }
+      throw new Error(lastError || "Unable to read /v1/models");
+    }
+    function candidateName(id, provider) {
+      const base = String((provider || "cpa") + "-" + id)
+        .toLowerCase()
+        .replace(/[^a-z0-9._-]+/g, "-")
+        .replace(/^-+|-+$/g, "")
+        .slice(0, 96);
+      return base || "cpa-model";
     }
     async function selectCandidate(name) {
       const key = managementKey.value.trim();

@@ -42,7 +42,7 @@ func (p *remoteCodeRouterPlugin) buildRoutePlan(req pluginapi.ModelRouteRequest,
 		return RoutePlan{}, false
 	}
 	active := p.state.activeCandidate(p.cfg.ActiveCandidate)
-	candidates := cloneCandidates(p.cfg.Candidates)
+	candidates := p.effectiveCandidates()
 	if filterProviders {
 		candidates = filterByAvailableProviders(candidates, req.AvailableProviders)
 	}
@@ -122,11 +122,45 @@ func filterByAvailableProviders(candidates []Candidate, available []string) []Ca
 	}
 	out := make([]Candidate, 0, len(candidates))
 	for _, candidate := range candidates {
-		if _, ok := providers[strings.ToLower(strings.TrimSpace(candidate.Provider))]; ok {
+		provider := strings.ToLower(strings.TrimSpace(candidate.Provider))
+		if provider == "" || provider == "cpa" || provider == "auto" || provider == "*" || provider == "all" {
+			out = append(out, candidate)
+			continue
+		}
+		if _, ok := providers[provider]; ok {
 			out = append(out, candidate)
 		}
 	}
 	return out
+}
+
+func (p *remoteCodeRouterPlugin) effectiveCandidates() []Candidate {
+	if p == nil {
+		return nil
+	}
+	merged := cloneCandidates(p.cfg.Candidates)
+	seen := make(map[string]int, len(merged))
+	for i, candidate := range merged {
+		key := strings.ToLower(strings.TrimSpace(candidate.Name))
+		if key != "" {
+			seen[key] = i
+		}
+	}
+	for _, candidate := range p.state.importedCandidates() {
+		key := strings.ToLower(strings.TrimSpace(candidate.Name))
+		if key == "" {
+			continue
+		}
+		if idx, ok := seen[key]; ok {
+			candidate.Order = merged[idx].Order
+			merged[idx] = candidate
+			continue
+		}
+		candidate.Order = len(merged)
+		seen[key] = len(merged)
+		merged = append(merged, candidate)
+	}
+	return merged
 }
 
 func firstNonEmpty(values ...string) string {
