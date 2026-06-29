@@ -383,7 +383,7 @@ func remoteCodeRouterHTML() string {
         if (candidate.description) params.set("description", candidate.description);
         data = await fetchJSON([importURLs[0] + "?" + params.toString()]);
       }
-      notice.textContent = "Imported candidates: " + candidates.length;
+      notice.textContent = "Imported candidates: " + candidates.length + " from " + (modelPayload.source || "CPA models");
       notice.style.display = "block";
       render(data);
     }
@@ -391,7 +391,7 @@ func remoteCodeRouterHTML() string {
       let lastError = "";
       try {
         const models = await fetchManagementModels();
-        if (models.length) return { models };
+        if (models.length) return { models, source: "CPA management auth-files" };
         lastError = "management auth-files returned no models";
       } catch (err) {
         lastError = err.message;
@@ -428,7 +428,7 @@ func remoteCodeRouterHTML() string {
       for (const options of authRequestOptions()) {
         const res = await fetch("/v1/models", options);
         const data = await safeJSON(res);
-        if (res.ok) return data;
+        if (res.ok) return { ...data, source: "/v1/models" };
         lastError = "/v1/models: " + responseError(data, res.status);
       }
       throw new Error(lastError || "/v1/models is unavailable");

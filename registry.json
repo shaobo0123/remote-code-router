@@ -6,7 +6,7 @@
       "name": "Remote Code Router",
       "description": "Expose stable virtual coding models and switch the real upstream provider/model on the CPA server.",
       "author": "shaobo0123",
-      "version": "0.1.5",
+      "version": "0.1.6",
       "repository": "https://github.com/shaobo0123/remote-code-router",
       "homepage": "https://github.com/shaobo0123/remote-code-router",
       "license": "MIT",
