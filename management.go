@@ -388,23 +388,111 @@ func remoteCodeRouterHTML() string {
       render(data);
     }
     async function fetchCPAModels() {
-      const attempts = [
-        { headers: { "Accept": "application/json" } }
-      ];
       let lastError = "";
-      for (const options of attempts) {
-        const res = await fetch("/v1/models", options);
-        let data = null;
-        try {
-          data = await res.json();
-        } catch (err) {
-          lastError = "/v1/models: invalid JSON response";
-          continue;
-        }
-        if (res.ok) return data;
-        lastError = "/v1/models: " + (data.error?.message || data.error || data.message || ("HTTP " + res.status));
+      try {
+        const models = await fetchManagementModels();
+        if (models.length) return { models };
+        lastError = "management auth-files returned no models";
+      } catch (err) {
+        lastError = err.message;
       }
-      throw new Error(lastError || "Unable to read /v1/models");
+      try {
+        return await fetchClientModels();
+      } catch (err) {
+        lastError = lastError + "; " + err.message;
+      }
+      throw new Error("Unable to import CPA models. " + lastError);
+    }
+    async function fetchManagementModels() {
+      const filesPayload = await fetchAnyJSONWithAuth("/v0/management/auth-files");
+      const files = Array.isArray(filesPayload.files) ? filesPayload.files : [];
+      const models = [];
+      for (const file of files) {
+        if (file.disabled || file.unavailable) continue;
+        const name = String(file.name || file.id || file.auth_index || "").trim();
+        if (!name) continue;
+        const payload = await fetchAnyJSONWithAuth("/v0/management/auth-files/models?name=" + encodeURIComponent(name));
+        const items = Array.isArray(payload.models) ? payload.models : [];
+        for (const item of items) {
+          models.push({
+            ...item,
+            provider: item.provider || item.owned_by || file.provider || file.type || "cpa",
+            description: item.description || item.display_name || file.label || name
+          });
+        }
+      }
+      return models;
+    }
+    async function fetchClientModels() {
+      let lastError = "";
+      for (const options of authRequestOptions()) {
+        const res = await fetch("/v1/models", options);
+        const data = await safeJSON(res);
+        if (res.ok) return data;
+        lastError = "/v1/models: " + responseError(data, res.status);
+      }
+      throw new Error(lastError || "/v1/models is unavailable");
+    }
+    async function fetchAnyJSONWithAuth(url) {
+      let lastError = "";
+      for (const options of authRequestOptions()) {
+        const res = await fetch(url, options);
+        const data = await safeJSON(res);
+        if (res.ok) return data;
+        lastError = url + ": " + responseError(data, res.status);
+      }
+      throw new Error(lastError || (url + " is unavailable"));
+    }
+    function authRequestOptions() {
+      const values = credentialCandidates();
+      const out = [{ headers: { "Accept": "application/json" } }];
+      for (const value of values) {
+        out.push({ headers: { "Accept": "application/json", "X-Management-Key": value } });
+        out.push({ headers: { "Accept": "application/json", "Authorization": value.toLowerCase().startsWith("bearer ") ? value : ("Bearer " + value) } });
+      }
+      return out;
+    }
+    function credentialCandidates() {
+      const found = new Set();
+      collectCredentialsFromStorage(localStorage, found);
+      collectCredentialsFromStorage(sessionStorage, found);
+      return Array.from(found).filter(v => v.length > 0 && v.length <= 512);
+    }
+    function collectCredentialsFromStorage(storage, found) {
+      try {
+        for (let i = 0; i < storage.length; i++) {
+          const key = storage.key(i) || "";
+          collectCredentialValue(key, storage.getItem(key), found);
+        }
+      } catch (err) {}
+    }
+    function collectCredentialValue(key, value, found) {
+      value = String(value || "").trim();
+      if (!value) return;
+      if (/management|secret|password|token|auth|key/i.test(key) && !value.startsWith("{") && !value.startsWith("[")) {
+        found.add(value);
+      }
+      try {
+        const parsed = JSON.parse(value);
+        collectCredentialsFromObject(parsed, found);
+      } catch (err) {}
+    }
+    function collectCredentialsFromObject(input, found) {
+      if (!input || typeof input !== "object") return;
+      for (const [key, value] of Object.entries(input)) {
+        if (typeof value === "string") collectCredentialValue(key, value, found);
+        else if (value && typeof value === "object") collectCredentialsFromObject(value, found);
+      }
+    }
+    async function safeJSON(res) {
+      try {
+        return await res.json();
+      } catch (err) {
+        return { error: "invalid JSON response" };
+      }
+    }
+    function responseError(data, status) {
+      return data?.error?.message || data?.error || data?.message || ("HTTP " + status);
     }
     function candidateName(id, provider) {
       const base = String((provider || "cpa") + "-" + id)

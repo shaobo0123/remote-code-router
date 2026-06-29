@@ -33,7 +33,7 @@ fallback:
   enabled: true
 ```
 
-After the plugin is running, open `Remote Code Router` and click `Import CPA Models`. The page reads `/v1/models`, filters out this plugin's virtual aliases, and saves the imported candidates to `remote-code-router.state.yaml`.
+After the plugin is running, open `Remote Code Router` and click `Import CPA Models`. The page reads CPA management auth-file model metadata first, falls back to `/v1/models` when available, filters out this plugin's virtual aliases, and saves imported candidates to `remote-code-router.state.yaml`.
 
 Manual candidate shape:
 
