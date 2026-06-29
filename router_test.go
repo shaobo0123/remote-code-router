@@ -206,6 +206,58 @@ fallback:
 	}
 }
 
+func TestResourceImportAndSelectWithoutManagementKey(t *testing.T) {
+	plugin, err := buildPlugin([]byte(`
+client_models: [code]
+active_candidate: auto
+model_aliases:
+  - id: code
+fallback:
+  enabled: true
+`), t.TempDir())
+	if err != nil {
+		t.Fatalf("buildPlugin() error = %v", err)
+	}
+	p := plugin.Capabilities.ModelRouter.(*remoteCodeRouterPlugin)
+	resp, err := p.HandleManagement(context.Background(), pluginapi.ManagementRequest{
+		Method: http.MethodGet,
+		Path:   "/v0/resource/plugins/remote-code-router/import.json",
+		Query: map[string][]string{
+			"clear":    {"1"},
+			"name":     {"cpa-gpt-5"},
+			"provider": {"cpa"},
+			"model":    {"gpt-5"},
+			"priority": {"100"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("resource import error = %v", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("import status = %d, body=%s", resp.StatusCode, string(resp.Body))
+	}
+	resp, err = p.HandleManagement(context.Background(), pluginapi.ManagementRequest{
+		Method: http.MethodGet,
+		Path:   "/v0/resource/plugins/remote-code-router/select.json",
+		Query: map[string][]string{
+			"candidate": {"cpa-gpt-5"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("resource select error = %v", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("select status = %d, body=%s", resp.StatusCode, string(resp.Body))
+	}
+	plan, ok := p.buildRoutePlan(pluginapi.ModelRouteRequest{RequestedModel: "code"}, false)
+	if !ok {
+		t.Fatalf("expected route plan")
+	}
+	if got := plan.Candidates[0].Model; got != "gpt-5" {
+		t.Fatalf("first candidate model = %q, want gpt-5", got)
+	}
+}
+
 func TestResourceStatusReturnsAliases(t *testing.T) {
 	p := newTestPlugin(t)
 	resp, err := p.HandleManagement(context.Background(), pluginapi.ManagementRequest{

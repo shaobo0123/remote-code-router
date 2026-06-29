@@ -101,6 +101,29 @@ func (s *stateStore) setImportedCandidates(candidates []Candidate) error {
 	return s.saveLocked()
 }
 
+func (s *stateStore) upsertImportedCandidate(candidate Candidate) error {
+	if s == nil {
+		return nil
+	}
+	normalized := normalizeStateCandidates([]Candidate{candidate})
+	if len(normalized) == 0 {
+		return nil
+	}
+	candidate = normalized[0]
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for i, item := range s.data.ImportedCandidates {
+		if strings.EqualFold(item.Name, candidate.Name) {
+			candidate.Order = item.Order
+			s.data.ImportedCandidates[i] = candidate
+			return s.saveLocked()
+		}
+	}
+	candidate.Order = len(s.data.ImportedCandidates)
+	s.data.ImportedCandidates = append(s.data.ImportedCandidates, candidate)
+	return s.saveLocked()
+}
+
 func (s *stateStore) saveLocked() error {
 	if dir := filepath.Dir(s.path); dir != "." && dir != "" {
 		if err := os.MkdirAll(dir, 0o755); err != nil {

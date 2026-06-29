@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/router-for-me/CLIProxyAPI/v7/sdk/pluginapi"
@@ -15,6 +16,8 @@ const (
 	managementSelectPath = "plugins/remote-code-router/select"
 	managementImportPath = "plugins/remote-code-router/import"
 	resourceStatusPath   = "status.json"
+	resourceSelectPath   = "select.json"
+	resourceImportPath   = "import.json"
 	resourceIndexPath    = "index.html"
 )
 
@@ -75,6 +78,16 @@ func (p *remoteCodeRouterPlugin) RegisterManagement(context.Context, pluginapi.M
 				Handler:     p,
 			},
 			{
+				Path:        resourceSelectPath,
+				Description: "Set the active server-side model candidate from the plugin page.",
+				Handler:     p,
+			},
+			{
+				Path:        resourceImportPath,
+				Description: "Import CPA model entries from the plugin page.",
+				Handler:     p,
+			},
+			{
 				Path:        resourceIndexPath,
 				Menu:        "Remote Code Router",
 				Description: "Switch the server-side model used by remote-code-router aliases.",
@@ -96,6 +109,10 @@ func (p *remoteCodeRouterPlugin) HandleManagement(_ context.Context, req plugina
 		return p.handleImportCandidates(req.Body)
 	case method == http.MethodGet && (path == resourceStatusPath || strings.HasSuffix(path, "/"+resourceStatusPath)):
 		return jsonManagementResponse(http.StatusOK, p.managementStatus()), nil
+	case method == http.MethodGet && (path == resourceSelectPath || strings.HasSuffix(path, "/"+resourceSelectPath)):
+		return p.handleResourceSelectCandidate(req)
+	case method == http.MethodGet && (path == resourceImportPath || strings.HasSuffix(path, "/"+resourceImportPath)):
+		return p.handleResourceImportCandidate(req)
 	case method == http.MethodGet && (path == resourceIndexPath || path == "" || strings.HasSuffix(path, "/"+resourceIndexPath)):
 		return htmlManagementResponse(remoteCodeRouterHTML()), nil
 	default:
@@ -120,6 +137,45 @@ func (p *remoteCodeRouterPlugin) handleSelectCandidate(body []byte) (pluginapi.M
 	return jsonManagementResponse(http.StatusOK, p.managementStatus()), nil
 }
 
+func (p *remoteCodeRouterPlugin) handleResourceSelectCandidate(req pluginapi.ManagementRequest) (pluginapi.ManagementResponse, error) {
+	candidate := firstNonEmpty(req.Query.Get("active_candidate"), req.Query.Get("candidate"))
+	if err := p.validateCandidateSelection(candidate); err != nil {
+		return jsonManagementResponse(http.StatusBadRequest, map[string]any{"error": err.Error()}), nil
+	}
+	if err := p.state.setActiveCandidate(candidate); err != nil {
+		return pluginapi.ManagementResponse{}, err
+	}
+	return jsonManagementResponse(http.StatusOK, p.managementStatus()), nil
+}
+
+func (p *remoteCodeRouterPlugin) handleResourceImportCandidate(req pluginapi.ManagementRequest) (pluginapi.ManagementResponse, error) {
+	if isTruthy(req.Query.Get("clear")) {
+		if err := p.state.setImportedCandidates(nil); err != nil {
+			return pluginapi.ManagementResponse{}, err
+		}
+		if strings.TrimSpace(req.Query.Get("model")) == "" {
+			return jsonManagementResponse(http.StatusOK, p.managementStatus()), nil
+		}
+	}
+	priority, _ := strconv.Atoi(strings.TrimSpace(req.Query.Get("priority")))
+	candidate := Candidate{
+		Name:        req.Query.Get("name"),
+		Provider:    req.Query.Get("provider"),
+		Model:       req.Query.Get("model"),
+		Priority:    priority,
+		Description: req.Query.Get("description"),
+		Disabled:    isTruthy(req.Query.Get("disabled")),
+	}
+	normalized := normalizeStateCandidates([]Candidate{candidate})
+	if len(normalized) == 0 {
+		return jsonManagementResponse(http.StatusBadRequest, map[string]any{"error": "model and name are required"}), nil
+	}
+	if err := p.state.upsertImportedCandidate(normalized[0]); err != nil {
+		return pluginapi.ManagementResponse{}, err
+	}
+	return jsonManagementResponse(http.StatusOK, p.managementStatus()), nil
+}
+
 func (p *remoteCodeRouterPlugin) handleImportCandidates(body []byte) (pluginapi.ManagementResponse, error) {
 	var req importCandidatesRequest
 	if len(body) == 0 {
@@ -136,6 +192,15 @@ func (p *remoteCodeRouterPlugin) handleImportCandidates(body []byte) (pluginapi.
 		return pluginapi.ManagementResponse{}, err
 	}
 	return jsonManagementResponse(http.StatusOK, p.managementStatus()), nil
+}
+
+func isTruthy(value string) bool {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "1", "true", "yes", "on":
+		return true
+	default:
+		return false
+	}
 }
 
 func (p *remoteCodeRouterPlugin) validateCandidateSelection(candidate string) error {
@@ -252,7 +317,6 @@ func remoteCodeRouterHTML() string {
         <div class="subtle" id="summary">Loading</div>
       </div>
       <div class="toolbar">
-        <input id="managementKey" type="password" placeholder="Management key">
         <button id="importModels" type="button">Import CPA Models</button>
         <button id="refresh" type="button">Refresh</button>
       </div>
@@ -267,21 +331,18 @@ func remoteCodeRouterHTML() string {
       "/v0/management/remote-code-router/status"
     ];
     const selectURLs = [
+      "/v0/resource/plugins/remote-code-router/select.json",
       "/v0/management/plugins/remote-code-router/select",
       "/v0/management/remote-code-router/select"
     ];
     const importURLs = [
+      "/v0/resource/plugins/remote-code-router/import.json",
       "/v0/management/plugins/remote-code-router/import",
       "/v0/management/remote-code-router/import"
     ];
     const grid = document.getElementById("grid");
     const summary = document.getElementById("summary");
     const notice = document.getElementById("notice");
-    const managementKey = document.getElementById("managementKey");
-    managementKey.value = localStorage.getItem("remoteCodeRouterManagementKey") || "";
-    managementKey.addEventListener("change", () => {
-      localStorage.setItem("remoteCodeRouterManagementKey", managementKey.value);
-    });
     document.getElementById("refresh").addEventListener("click", load);
     document.getElementById("importModels").addEventListener("click", () => importCPAModels().catch(err => alert(err.message)));
     async function load() {
@@ -289,15 +350,9 @@ func remoteCodeRouterHTML() string {
       render(data);
     }
     async function importCPAModels() {
-      const key = managementKey.value.trim();
-      if (!key) {
-        alert("Enter the management key before importing candidates.");
-        managementKey.focus();
-        return;
-      }
       const status = await fetchJSON(statusURLs);
       const aliases = new Set((status.models || []).map(m => String(m.id || m.name || "").toLowerCase()).filter(Boolean));
-      const modelPayload = await fetchCPAModels(key);
+      const modelPayload = await fetchCPAModels();
       const rawModels = Array.isArray(modelPayload.data) ? modelPayload.data : (Array.isArray(modelPayload.models) ? modelPayload.models : []);
       const candidates = [];
       const seen = new Set();
@@ -318,25 +373,23 @@ func remoteCodeRouterHTML() string {
         });
       }
       if (!candidates.length) throw new Error("No CPA models were found to import.");
-      localStorage.setItem("remoteCodeRouterManagementKey", key);
-      const data = await fetchJSON(importURLs, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Accept": "application/json",
-          "X-Management-Key": key
-        },
-        body: JSON.stringify({ candidates })
-      });
+      let data = await fetchJSON([importURLs[0] + "?clear=1"]);
+      for (const candidate of candidates) {
+        const params = new URLSearchParams();
+        params.set("name", candidate.name);
+        params.set("provider", candidate.provider);
+        params.set("model", candidate.model);
+        params.set("priority", String(candidate.priority));
+        if (candidate.description) params.set("description", candidate.description);
+        data = await fetchJSON([importURLs[0] + "?" + params.toString()]);
+      }
       notice.textContent = "Imported candidates: " + candidates.length;
       notice.style.display = "block";
       render(data);
     }
-    async function fetchCPAModels(key) {
+    async function fetchCPAModels() {
       const attempts = [
-        { headers: { "Accept": "application/json" } },
-        { headers: { "Accept": "application/json", "Authorization": "Bearer " + key } },
-        { headers: { "Accept": "application/json", "X-Management-Key": key } }
+        { headers: { "Accept": "application/json" } }
       ];
       let lastError = "";
       for (const options of attempts) {
@@ -362,22 +415,9 @@ func remoteCodeRouterHTML() string {
       return base || "cpa-model";
     }
     async function selectCandidate(name) {
-      const key = managementKey.value.trim();
-      if (!key) {
-        alert("Enter the management key before switching candidates.");
-        managementKey.focus();
-        return;
-      }
-      localStorage.setItem("remoteCodeRouterManagementKey", key);
-      const data = await fetchJSON(selectURLs, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Accept": "application/json",
-          "X-Management-Key": key
-        },
-        body: JSON.stringify({ active_candidate: name })
-      });
+      const data = await fetchJSON([
+        selectURLs[0] + "?candidate=" + encodeURIComponent(name)
+      ]);
       notice.textContent = "Active candidate: " + data.active_candidate;
       notice.style.display = "block";
       render(data);
