@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "plugins": [
+    {
+      "id": "remote-code-router",
+      "name": "Remote Code Router",
+      "description": "Expose stable virtual coding models and switch the real upstream provider/model on the CPA server.",
+      "author": "shaobo0123",
+      "version": "0.1.0",
+      "repository": "https://github.com/shaobo0123/remote-code-router",
+      "homepage": "https://github.com/shaobo0123/remote-code-router",
+      "license": "MIT",
+      "tags": [
+        "router",
+        "model-router",
+        "model-switch",
+        "management",
+        "fallback"
+      ]
+    }
+  ]
+}
