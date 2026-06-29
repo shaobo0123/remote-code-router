@@ -7,7 +7,7 @@ const (
 	pluginProvider = "remote-code-router"
 )
 
-var pluginVersion = "0.1.6"
+var pluginVersion = "0.1.7"
 
 var executorFormats = []string{
 	"claude",
@@ -19,11 +19,9 @@ var executorFormats = []string{
 }
 
 type remoteCodeRouterPlugin struct {
-	cfg        PluginConfig
-	configYAML []byte
-	pluginDir  string
-	plans      *routePlanStore
-	state      *stateStore
+	cfg   PluginConfig
+	plans *routePlanStore
+	state *stateStore
 }
 
 func main() {}
@@ -35,11 +33,9 @@ func buildPlugin(configYAML []byte, pluginDir string) (pluginapi.Plugin, error) 
 	}
 
 	p := &remoteCodeRouterPlugin{
-		cfg:        cfg,
-		configYAML: append([]byte(nil), configYAML...),
-		pluginDir:  pluginDir,
-		plans:      newRoutePlanStore(defaultRoutePlanTTL),
-		state:      newStateStore(pluginDir, cfg),
+		cfg:   cfg,
+		plans: newRoutePlanStore(defaultRoutePlanTTL),
+		state: newStateStore(pluginDir, cfg),
 	}
 
 	return pluginapi.Plugin{
@@ -63,11 +59,6 @@ func buildPlugin(configYAML []byte, pluginDir string) (pluginapi.Plugin, error) 
 					Name:        "candidates",
 					Type:        pluginapi.ConfigFieldTypeArray,
 					Description: "Provider/model candidates available behind the alias.",
-				},
-				{
-					Name:        "fallback",
-					Type:        pluginapi.ConfigFieldTypeObject,
-					Description: "Fallback status codes and streaming fallback policy.",
 				},
 			},
 		},

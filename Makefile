@@ -1,5 +1,5 @@
 PLUGIN_NAME ?= remote-code-router
-VERSION ?= 0.1.6
+VERSION ?= 0.1.7
 BUILD_DIR ?= .
 GOOS ?= $(shell go env GOOS)
 GOARCH ?= $(shell go env GOARCH)

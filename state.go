@@ -53,14 +53,14 @@ func statePath(pluginDir string) string {
 	return filepath.Join(pluginDir, stateFileName)
 }
 
-func (s *stateStore) activeCandidate(fallback string) string {
+func (s *stateStore) activeCandidate(defaultCandidate string) string {
 	if s == nil {
-		return normalizeActiveCandidate(fallback)
+		return normalizeActiveCandidate(defaultCandidate)
 	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	if strings.TrimSpace(s.data.ActiveCandidate) == "" {
-		return normalizeActiveCandidate(fallback)
+		return normalizeActiveCandidate(defaultCandidate)
 	}
 	return normalizeActiveCandidate(s.data.ActiveCandidate)
 }
@@ -98,29 +98,6 @@ func (s *stateStore) setImportedCandidates(candidates []Candidate) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.data.ImportedCandidates = normalized
-	return s.saveLocked()
-}
-
-func (s *stateStore) upsertImportedCandidate(candidate Candidate) error {
-	if s == nil {
-		return nil
-	}
-	normalized := normalizeStateCandidates([]Candidate{candidate})
-	if len(normalized) == 0 {
-		return nil
-	}
-	candidate = normalized[0]
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	for i, item := range s.data.ImportedCandidates {
-		if strings.EqualFold(item.Name, candidate.Name) {
-			candidate.Order = item.Order
-			s.data.ImportedCandidates[i] = candidate
-			return s.saveLocked()
-		}
-	}
-	candidate.Order = len(s.data.ImportedCandidates)
-	s.data.ImportedCandidates = append(s.data.ImportedCandidates, candidate)
 	return s.saveLocked()
 }
 

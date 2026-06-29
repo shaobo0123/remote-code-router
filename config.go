@@ -14,15 +14,11 @@ const (
 	activeCandidateAuto = "auto"
 )
 
-var defaultFallbackOnStatus = []int{401, 403, 408, 409, 429, 500, 502, 503, 504}
-var defaultNoFallbackOnStatus = []int{400, 404, 422}
-
 type PluginConfig struct {
-	ClientModels    []string       `yaml:"client_models"`
-	ModelAliases    []ModelAlias   `yaml:"model_aliases"`
-	ActiveCandidate string         `yaml:"active_candidate"`
-	Candidates      []Candidate    `yaml:"candidates"`
-	Fallback        FallbackConfig `yaml:"fallback"`
+	ClientModels    []string     `yaml:"client_models"`
+	ModelAliases    []ModelAlias `yaml:"model_aliases"`
+	ActiveCandidate string       `yaml:"active_candidate"`
+	Candidates      []Candidate  `yaml:"candidates"`
 }
 
 type ModelAlias struct {
@@ -50,13 +46,6 @@ type Candidate struct {
 	Order       int    `yaml:"-"`
 }
 
-type FallbackConfig struct {
-	Enabled                            bool  `yaml:"enabled"`
-	FallbackOnStatus                   []int `yaml:"fallback_on_status"`
-	NoFallbackOnStatus                 []int `yaml:"no_fallback_on_status"`
-	StreamFallbackBeforeFirstChunkOnly bool  `yaml:"stream_fallback_before_first_chunk_only"`
-}
-
 func defaultPluginConfig() PluginConfig {
 	return PluginConfig{
 		ClientModels:    []string{"code"},
@@ -74,12 +63,6 @@ func defaultPluginConfig() PluginConfig {
 				Thinking:            true,
 				SupportedParameters: []string{"temperature", "top_p", "max_tokens", "stream"},
 			},
-		},
-		Fallback: FallbackConfig{
-			Enabled:                            true,
-			FallbackOnStatus:                   append([]int(nil), defaultFallbackOnStatus...),
-			NoFallbackOnStatus:                 append([]int(nil), defaultNoFallbackOnStatus...),
-			StreamFallbackBeforeFirstChunkOnly: true,
 		},
 	}
 }
@@ -170,7 +153,7 @@ func validateConfig(cfg PluginConfig, allowMissingCandidates bool) error {
 		seenAliases[key] = struct{}{}
 	}
 	if len(cfg.Candidates) == 0 {
-		return validateFallbackConfig(cfg.Fallback)
+		return nil
 	}
 	seenCandidates := make(map[string]struct{}, len(cfg.Candidates))
 	for i, candidate := range cfg.Candidates {
@@ -192,25 +175,6 @@ func validateConfig(cfg PluginConfig, allowMissingCandidates bool) error {
 	if cfg.ActiveCandidate != activeCandidateAuto {
 		if _, ok := seenCandidates[cfg.ActiveCandidate]; !ok && !allowMissingCandidates {
 			return fmt.Errorf("%s active_candidate %q does not match any candidate", pluginName, cfg.ActiveCandidate)
-		}
-	}
-	return validateFallbackConfig(cfg.Fallback)
-}
-
-func validateFallbackConfig(fallback FallbackConfig) error {
-	if err := validateStatusCodes("fallback_on_status", fallback.FallbackOnStatus); err != nil {
-		return err
-	}
-	if err := validateStatusCodes("no_fallback_on_status", fallback.NoFallbackOnStatus); err != nil {
-		return err
-	}
-	return nil
-}
-
-func validateStatusCodes(field string, codes []int) error {
-	for _, code := range codes {
-		if code < 100 || code > 599 {
-			return fmt.Errorf("%s config %s contains invalid HTTP status %d", pluginName, field, code)
 		}
 	}
 	return nil

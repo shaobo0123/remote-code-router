@@ -34,8 +34,6 @@ candidates:
     provider: zhipu
     model: glm-5.2
     priority: 80
-fallback:
-  enabled: true
 `)
 }
 
@@ -136,84 +134,12 @@ candidates:
 	}
 }
 
-func TestManagementSelectUpdatesState(t *testing.T) {
-	p := newTestPlugin(t)
-	resp, err := p.HandleManagement(context.Background(), pluginapi.ManagementRequest{
-		Method: http.MethodPost,
-		Path:   managementSelectPath,
-		Body:   []byte(`{"active_candidate":"deepseek"}`),
-	})
-	if err != nil {
-		t.Fatalf("HandleManagement() error = %v", err)
-	}
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("status = %d, body=%s", resp.StatusCode, string(resp.Body))
-	}
-	var status managementStatus
-	if err := json.Unmarshal(resp.Body, &status); err != nil {
-		t.Fatalf("decode status: %v", err)
-	}
-	if status.ActiveCandidate != "deepseek" {
-		t.Fatalf("active candidate = %q, want deepseek", status.ActiveCandidate)
-	}
-	plan, ok := p.buildRoutePlan(pluginapi.ModelRouteRequest{RequestedModel: "code"}, false)
-	if !ok {
-		t.Fatalf("expected route plan")
-	}
-	if got := plan.Candidates[0].Name; got != "deepseek" {
-		t.Fatalf("first candidate = %q, want deepseek", got)
-	}
-}
-
-func TestManagementImportCandidatesUpdatesRouting(t *testing.T) {
-	plugin, err := buildPlugin([]byte(`
-client_models: [code]
-active_candidate: auto
-model_aliases:
-  - id: code
-fallback:
-  enabled: true
-`), t.TempDir())
-	if err != nil {
-		t.Fatalf("buildPlugin() error = %v", err)
-	}
-	p := plugin.Capabilities.ModelRouter.(*remoteCodeRouterPlugin)
-	resp, err := p.HandleManagement(context.Background(), pluginapi.ManagementRequest{
-		Method: http.MethodPost,
-		Path:   managementImportPath,
-		Body: []byte(`{
-		  "candidates": [
-		    {"name":"cpa-gpt-5","provider":"cpa","model":"gpt-5","priority":100},
-		    {"name":"cpa-claude","provider":"cpa","model":"claude-sonnet-4","priority":90}
-		  ]
-		}`),
-	})
-	if err != nil {
-		t.Fatalf("HandleManagement() error = %v", err)
-	}
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("status = %d, body=%s", resp.StatusCode, string(resp.Body))
-	}
-	plan, ok := p.buildRoutePlan(pluginapi.ModelRouteRequest{
-		RequestedModel:     "code",
-		AvailableProviders: []string{"ark"},
-	}, true)
-	if !ok {
-		t.Fatalf("expected route plan")
-	}
-	if got := plan.Candidates[0].Model; got != "gpt-5" {
-		t.Fatalf("first candidate model = %q, want gpt-5", got)
-	}
-}
-
 func TestResourceImportAndSelectWithoutManagementKey(t *testing.T) {
 	plugin, err := buildPlugin([]byte(`
 client_models: [code]
 active_candidate: auto
 model_aliases:
   - id: code
-fallback:
-  enabled: true
 `), t.TempDir())
 	if err != nil {
 		t.Fatalf("buildPlugin() error = %v", err)
@@ -223,11 +149,7 @@ fallback:
 		Method: http.MethodGet,
 		Path:   "/v0/resource/plugins/remote-code-router/import.json",
 		Query: map[string][]string{
-			"clear":    {"1"},
-			"name":     {"cpa-gpt-5"},
-			"provider": {"cpa"},
-			"model":    {"gpt-5"},
-			"priority": {"100"},
+			"candidates": {`[{"name":"cpa-gpt-5","provider":"cpa","model":"gpt-5","priority":100}]`},
 		},
 	})
 	if err != nil {

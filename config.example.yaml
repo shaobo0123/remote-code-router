@@ -1,10 +1,7 @@
 # CPA plugin config key: remote-code-router
-# Clients request model "code" or "ark-code-latest"; the server chooses the real
-# provider/model through active_candidate or the management page.
 
 client_models:
   - code
-  - ark-code-latest
 
 active_candidate: auto
 
@@ -24,68 +21,4 @@ model_aliases:
       - max_tokens
       - stream
 
-  - id: ark-code-latest
-    display_name: Ark Code Latest
-    name: ark-code-latest
-    description: Ark-oriented virtual model routed on the server.
-    owned_by: remote-code-router
-    type: chat
-    context_length: 256000
-    max_completion_tokens: 16384
-    thinking: true
-    supported_parameters:
-      - temperature
-      - top_p
-      - max_tokens
-      - stream
-
-candidates:
-  # Optional. You can leave this list empty and import current CPA /v1/models
-  # from the Remote Code Router management page instead.
-  - name: doubao-code
-    provider: ark
-    model: doubao-seed-2.0-code
-    priority: 100
-    description: Primary Ark coding model.
-
-  - name: doubao-pro
-    provider: ark
-    model: doubao-seed-2.0-pro
-    priority: 95
-    description: General Ark pro model fallback.
-
-  - name: deepseek
-    provider: deepseek
-    model: deepseek-v4-pro
-    priority: 90
-    description: DeepSeek fallback candidate.
-
-  - name: glm
-    provider: zhipu
-    model: glm-5.2
-    priority: 80
-    description: GLM fallback candidate.
-
-  - name: kimi
-    provider: moonshot
-    model: kimi-k2.7-code
-    priority: 70
-    description: Kimi coding fallback candidate.
-
-fallback:
-  enabled: true
-  fallback_on_status:
-    - 401
-    - 403
-    - 408
-    - 409
-    - 429
-    - 500
-    - 502
-    - 503
-    - 504
-  no_fallback_on_status:
-    - 400
-    - 404
-    - 422
-  stream_fallback_before_first_chunk_only: true
+candidates: []

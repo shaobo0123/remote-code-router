@@ -1,10 +1,8 @@
 package main
 
 import (
-	"context"
 	"errors"
 	"fmt"
-	"net"
 	"regexp"
 	"strconv"
 	"strings"
@@ -69,59 +67,19 @@ func successStatus(status int) bool {
 	return status >= 200 && status < 300
 }
 
-func shouldFallback(status int, err error, cfg FallbackConfig) bool {
-	if !cfg.Enabled {
-		return false
+func statusOrDefault(status int) int {
+	if status > 0 {
+		return status
 	}
-	if statusInList(status, cfg.NoFallbackOnStatus) {
-		return false
-	}
-	if statusInList(status, cfg.FallbackOnStatus) {
-		return true
-	}
-	return status == 0 && isNetworkError(err)
+	return 502
 }
 
-func statusInList(status int, list []int) bool {
-	if status <= 0 {
-		return false
+func safeErrorMessage(err error, status int) string {
+	if status > 0 {
+		return fmt.Sprintf("model execution failed with status %d", status)
 	}
-	for _, item := range list {
-		if item == status {
-			return true
-		}
+	if err != nil {
+		return err.Error()
 	}
-	return false
-}
-
-func isNetworkError(err error) bool {
-	if err == nil {
-		return false
-	}
-	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
-		return true
-	}
-	var netErr net.Error
-	if errors.As(err, &netErr) && netErr.Timeout() {
-		return true
-	}
-	message := strings.ToLower(err.Error())
-	for _, token := range []string{
-		"timeout",
-		"timed out",
-		"connection reset",
-		"connection refused",
-		"connection aborted",
-		"broken pipe",
-		"no such host",
-		"dns",
-		"temporary failure",
-		"network is unreachable",
-		"eof",
-	} {
-		if strings.Contains(message, token) {
-			return true
-		}
-	}
-	return false
+	return "model execution failed"
 }

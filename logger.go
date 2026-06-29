@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"log"
 	"strings"
 
@@ -16,47 +15,7 @@ func logCandidateSuccess(hostCallbackID string, plan RoutePlan, candidate Candid
 		"selected_candidate": candidate.Name,
 		"candidate_priority": candidate.Priority,
 		"status_code":        status,
-		"final_result":       "success",
 	})
-}
-
-func logFallback(hostCallbackID string, plan RoutePlan, failed Candidate, next Candidate, status int, err error) {
-	safeLog(hostCallbackID, "warn", "remote code router fallback", map[string]any{
-		"active_candidate":   plan.ActiveCandidate,
-		"requested_model":    plan.RequestedModel,
-		"stream":             plan.Stream,
-		"selected_candidate": failed.Name,
-		"next_candidate":     next.Name,
-		"candidate_priority": failed.Priority,
-		"fallback_reason":    fallbackReason(status, err),
-		"status_code":        status,
-	})
-}
-
-func logNoFallback(hostCallbackID string, plan RoutePlan, candidate Candidate, status int, err error) {
-	safeLog(hostCallbackID, "warn", "remote code router no fallback", map[string]any{
-		"active_candidate":   plan.ActiveCandidate,
-		"requested_model":    plan.RequestedModel,
-		"stream":             plan.Stream,
-		"selected_candidate": candidate.Name,
-		"candidate_priority": candidate.Priority,
-		"fallback_reason":    fallbackReason(status, err),
-		"status_code":        status,
-		"final_result":       "failed",
-	})
-}
-
-func fallbackReason(status int, err error) string {
-	if status > 0 {
-		return fmt.Sprintf("status_%d", status)
-	}
-	if err != nil {
-		if isNetworkError(err) {
-			return "network_error"
-		}
-		return "host_error"
-	}
-	return "unknown"
 }
 
 func safeLog(hostCallbackID, level, message string, fields map[string]any) {
@@ -83,11 +42,8 @@ func safeLogFields(input map[string]any) map[string]any {
 		"stream":             {},
 		"sorted_candidates":  {},
 		"selected_candidate": {},
-		"next_candidate":     {},
 		"candidate_priority": {},
-		"fallback_reason":    {},
 		"status_code":        {},
-		"final_result":       {},
 	}
 	out := make(map[string]any, len(input))
 	for key, value := range input {

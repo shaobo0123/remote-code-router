@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -36,29 +35,18 @@ func (p *remoteCodeRouterPlugin) execute(_ context.Context, req pluginapi.Execut
 		return pluginapi.ExecutorResponse{}, statusError{status: http.StatusBadGateway, message: "remote code router: no route candidates"}
 	}
 
-	var lastErr error
-	lastStatus := 0
-	for index, candidate := range plan.Candidates {
-		resp, err := callHostModelExecute(req, candidate, hostCallbackID)
-		status := extractExecutionStatus(&resp, err)
-		if err == nil && successStatus(status) {
-			logCandidateSuccess(hostCallbackID, plan, candidate, status)
-			return pluginapi.ExecutorResponse{
-				Payload:  append([]byte(nil), resp.Body...),
-				Headers:  cloneHeader(resp.Headers),
-				Metadata: map[string]any{"selected_candidate": candidate.Name},
-			}, nil
-		}
-		lastErr = err
-		lastStatus = status
-		if !shouldFallback(status, err, p.cfg.Fallback) || index == len(plan.Candidates)-1 {
-			logNoFallback(hostCallbackID, plan, candidate, status, err)
-			return pluginapi.ExecutorResponse{}, statusError{status: statusOrDefault(status), message: safeErrorMessage(err, status)}
-		}
-		next := plan.Candidates[index+1]
-		logFallback(hostCallbackID, plan, candidate, next, status, err)
+	candidate := plan.Candidates[0]
+	resp, err := callHostModelExecute(req, candidate, hostCallbackID)
+	status := extractExecutionStatus(&resp, err)
+	if err != nil || !successStatus(status) {
+		return pluginapi.ExecutorResponse{}, statusError{status: statusOrDefault(status), message: safeErrorMessage(err, status)}
 	}
-	return pluginapi.ExecutorResponse{}, statusError{status: statusOrDefault(lastStatus), message: safeErrorMessage(lastErr, lastStatus)}
+	logCandidateSuccess(hostCallbackID, plan, candidate, status)
+	return pluginapi.ExecutorResponse{
+		Payload:  append([]byte(nil), resp.Body...),
+		Headers:  cloneHeader(resp.Headers),
+		Metadata: map[string]any{"selected_candidate": candidate.Name},
+	}, nil
 }
 
 func (p *remoteCodeRouterPlugin) startExecutorStream(req rpcExecutorRequest) ([]byte, error) {
@@ -90,35 +78,14 @@ func (p *remoteCodeRouterPlugin) runStreamOrchestration(_ context.Context, req p
 		return statusError{status: http.StatusBadGateway, message: "remote code router: no stream route candidates"}
 	}
 
-	var lastErr error
-	lastStatus := 0
-	for index, candidate := range plan.Candidates {
-		status, err := p.forwardCandidateStream(req, hostCallbackID, pluginStreamID, candidate)
-		if err == nil && successStatus(status) {
-			logCandidateSuccess(hostCallbackID, plan, candidate, status)
-			return nil
-		}
-		lastErr = err
-		lastStatus = status
-		var terminalStreamErr terminalStreamError
-		if errors.As(err, &terminalStreamErr) || !shouldFallback(status, err, p.cfg.Fallback) || index == len(plan.Candidates)-1 {
-			logNoFallback(hostCallbackID, plan, candidate, status, err)
-			return statusError{status: statusOrDefault(status), message: safeErrorMessage(err, status)}
-		}
-		next := plan.Candidates[index+1]
-		logFallback(hostCallbackID, plan, candidate, next, status, err)
+	candidate := plan.Candidates[0]
+	status, err := p.forwardCandidateStream(req, hostCallbackID, pluginStreamID, candidate)
+	if err != nil || !successStatus(status) {
+		return statusError{status: statusOrDefault(status), message: safeErrorMessage(err, status)}
 	}
-	return statusError{status: statusOrDefault(lastStatus), message: safeErrorMessage(lastErr, lastStatus)}
+	logCandidateSuccess(hostCallbackID, plan, candidate, status)
+	return nil
 }
-
-type terminalStreamError struct {
-	status int
-	err    error
-}
-
-func (e terminalStreamError) Error() string   { return e.err.Error() }
-func (e terminalStreamError) Unwrap() error   { return e.err }
-func (e terminalStreamError) StatusCode() int { return e.status }
 
 func (p *remoteCodeRouterPlugin) forwardCandidateStream(req pluginapi.ExecutorRequest, hostCallbackID, pluginStreamID string, candidate Candidate) (int, error) {
 	resp, err := callHostModelExecuteStream(req, candidate, hostCallbackID)
@@ -135,29 +102,21 @@ func (p *remoteCodeRouterPlugin) forwardCandidateStream(req pluginapi.ExecutorRe
 	}
 	defer func() { _ = closeHostModelStream(resp.StreamID) }()
 
-	emitted := false
 	for {
 		chunk, errRead := readHostModelStream(resp.StreamID)
 		if errRead != nil {
 			status = statusFromError(errRead)
-			if emitted {
-				return status, terminalStreamError{status: status, err: errRead}
-			}
 			return status, errRead
 		}
 		if chunk.Error != "" {
 			errChunk := fmt.Errorf("%s", chunk.Error)
 			status = statusFromError(errChunk)
-			if emitted {
-				return status, terminalStreamError{status: status, err: errChunk}
-			}
 			return status, errChunk
 		}
 		if len(chunk.Payload) > 0 {
 			if errEmit := emitPluginStreamChunk(pluginStreamID, chunk.Payload); errEmit != nil {
 				return statusFromError(errEmit), errEmit
 			}
-			emitted = true
 		}
 		if chunk.Done {
 			return http.StatusOK, nil
@@ -171,21 +130,4 @@ func streamHeaders(req pluginapi.ExecutorRequest) http.Header {
 		contentType = "application/json"
 	}
 	return http.Header{"Content-Type": []string{contentType}}
-}
-
-func statusOrDefault(status int) int {
-	if status > 0 {
-		return status
-	}
-	return http.StatusBadGateway
-}
-
-func safeErrorMessage(err error, status int) string {
-	if status > 0 {
-		return fmt.Sprintf("model execution failed with status %d", status)
-	}
-	if err != nil {
-		return err.Error()
-	}
-	return "model execution failed"
 }
